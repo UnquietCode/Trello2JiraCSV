@@ -68,27 +68,35 @@ def AddIssue(issuetype, IssueID, ParentID, Status, resolution, summary, descript
 	AddCSVItem(description)
 	AddCSVItem(component)
 
-	# Handle attachments
-	numAttachments = len(attachments) if attachments != None else 0
+	# handle attachments
+	attachments = attachments or []
+	numAttachments = len(attachments)
+
 	if numAttachments > maxAttachments:
-		print "\tError! - {0} Attachments found in \"{1}\". Card will be skipped, only {2} will be handled. Update header line and maxAttachments value".format(numAttachments, summary, maxAttachments)
+		print("\tError! - {0} Attachments found in \"{1}\". Card will be skipped, only {2} will be handled. Update header line and maxAttachments value".format(numAttachments, summary, maxAttachments))
 		return 1
 
-	for i in range(numAttachments):
-		AddCSVItem(attachments[i]["url"])
-	for i in range(numAttachments, maxAttachments):
+	for attachment in attachments:
+		AddCSVItem(attachment["url"])
+
+	for _ in range(numAttachments, maxAttachments):
 		AddCSVItem("")
 
-	numLabels = len(labels) if labels != None else 0
+
+	# handle labels
+	labels = labels or []
+	numLabels = len(labels)
+
 	if numLabels > maxLabels:
-		print "\tError! - {0} labels found in \"{1}\". Card will be skipped, only {1} will be handled. Update header line and maxLabels value".format(numLabels, summary, maxLabels)
+		print("\tError! - {0} labels found in \"{1}\". Card will be skipped, only {1} will be handled. Update maxLabels value".format(numLabels, summary, maxLabels))
 		return 1
 
-	for i in range(numLabels):
-		label = labels[i]["name"]
+	for label in labels:
+		label = label["name"]
 		label = label.replace(" ", "_")
 		AddCSVItem(label)
-	for i in range(numLabels, maxLabels):
+
+	for _ in range(numLabels, maxLabels):
 		AddCSVItem("")
 
 	EndCSVLine()
@@ -113,7 +121,7 @@ checklistDict 	= {}
 checklistNames 	= {}
 csvData 		= ""
 maxLabels 		= 8
-maxAttachments  = 3
+maxAttachments  = 5
 headerLine 		= "issuetype, Issue ID, Parent ID, Status, Resolution, summary, description, component" + (", attachment" * maxAttachments) + (", label" * maxLabels) + "\n"
 
 print "Loading " + jsonPath
@@ -142,9 +150,9 @@ print "\t{0} labels found".format(len(data["labels"]))
 for card in data["cards"]:
 	# Grab all the core data we'll need from the card
 	issueID 	= card["id"]
-	cardName 	= card["name"].rstrip()
+	cardName 	= card["name"].strip()
 	shortURL 	= card["shortUrl"].strip()
-	cardDesc 	= card["desc"].rstrip()
+	cardDesc 	= card["desc"].strip()
 	labels 		= card["labels"]
 	listName 	= listDict[card["idList"]]
 	attachments = card["attachments"]
