@@ -18,7 +18,7 @@ A simple python script to convert free Trello json exports to a csv format ready
 
 ## Known limitations
 Currently supports a maximum of 8 labels and 2 attachments per card.
-If you need more simply update the maxLabels/maxAttachments variables and the headerLine variable
+If you need more simply update the MAX_LABELS/MAX_ATTACHMENTS variables and the headerLine variable
 
 ## To Do
 Add pre pass to work our the maximum amount of attachments and labels and generate the headerline accordingly (See above)

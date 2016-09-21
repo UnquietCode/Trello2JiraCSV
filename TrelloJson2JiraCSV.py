@@ -22,6 +22,30 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
+
+# User Configuration
+
+# maps list names to statuses
+STATUSES = {
+	'Backlog' : 'To Do',
+	'Doing' : 'In Progress',
+	'Done' : 'In Review',
+	'Test' : 'In Review',
+	'Shipit!' : 'Done',
+}
+
+# maps list names to resolutions
+RESOLUTIONS = {
+	'Shipit!' : 'Done',
+}
+
+MAX_LABELS = 8
+MAX_ATTACHMENTS = 5
+
+
+# -----------------------------------------------------------------------
+
+
 import sys
 import json
 import optparse
@@ -72,14 +96,14 @@ def AddIssue(issuetype, IssueID, ParentID, Status, resolution, summary, descript
 	attachments = attachments or []
 	numAttachments = len(attachments)
 
-	if numAttachments > maxAttachments:
-		print("\tError! - {0} Attachments found in \"{1}\". Card will be skipped, only {2} will be handled. Update header line and maxAttachments value".format(numAttachments, summary, maxAttachments))
+	if numAttachments > MAX_ATTACHMENTS:
+		print("\tError! - {0} Attachments found in \"{1}\". Card will be skipped, only {2} will be handled. Update header line and MAX_ATTACHMENTS value".format(numAttachments, summary, MAX_ATTACHMENTS))
 		return 1
 
 	for attachment in attachments:
 		AddCSVItem(attachment["url"])
 
-	for _ in range(numAttachments, maxAttachments):
+	for _ in range(numAttachments, MAX_ATTACHMENTS):
 		AddCSVItem("")
 
 
@@ -87,8 +111,8 @@ def AddIssue(issuetype, IssueID, ParentID, Status, resolution, summary, descript
 	labels = labels or []
 	numLabels = len(labels)
 
-	if numLabels > maxLabels:
-		print("\tError! - {0} labels found in \"{1}\". Card will be skipped, only {1} will be handled. Update maxLabels value".format(numLabels, summary, maxLabels))
+	if numLabels > MAX_LABELS:
+		print("\tError! - {0} labels found in \"{1}\". Card will be skipped, only {1} will be handled. Update MAX_LABELS value".format(numLabels, summary, MAX_LABELS))
 		return 1
 
 	for label in labels:
@@ -96,7 +120,7 @@ def AddIssue(issuetype, IssueID, ParentID, Status, resolution, summary, descript
 		label = label.replace(" ", "_")
 		AddCSVItem(label)
 
-	for _ in range(numLabels, maxLabels):
+	for _ in range(numLabels, MAX_LABELS):
 		AddCSVItem("")
 
 	EndCSVLine()
@@ -120,9 +144,7 @@ listDict 		= {}
 checklistDict 	= {}
 checklistNames 	= {}
 csvData 		= ""
-maxLabels 		= 8
-maxAttachments  = 5
-headerLine 		= "issuetype, Issue ID, Parent ID, Status, Resolution, summary, description, component" + (", attachment" * maxAttachments) + (", label" * maxLabels) + "\n"
+headerLine 		= "issuetype, Issue ID, Parent ID, Status, Resolution, summary, description, component" + (", attachment" * MAX_ATTACHMENTS) + (", label" * MAX_LABELS) + "\n"
 
 print "Loading " + jsonPath
 
@@ -148,25 +170,20 @@ print "\t{0} labels found".format(len(data["labels"]))
 
 # Core loop
 for card in data["cards"]:
+	listName 	= listDict[card["idList"]]
+
 	# Grab all the core data we'll need from the card
 	issueID 	= card["id"]
 	cardName 	= card["name"].strip()
 	shortURL 	= card["shortUrl"].strip()
 	cardDesc 	= card["desc"].strip()
 	labels 		= card["labels"]
-	listName 	= listDict[card["idList"]]
 	attachments = card["attachments"]
-	status 		= "To Do"
-	component 	= ""
+	status 		= STATUSES.get(listName) or "To Do"
+	resolution  = RESOLUTIONS.get(listName) or ""
 
 	# We'll use the list name as the status of component depending on user input
-	if opts.listAsComp:
-		component = listName
-	else:
-		status 	  = listName
-
-	# Set resolution up value if we can
-	resolution = "Done" if status == "Done" else ""
+	component = listName if opts.listAsComp else ""
 
 	# Append URL to description
 	if cardDesc:
