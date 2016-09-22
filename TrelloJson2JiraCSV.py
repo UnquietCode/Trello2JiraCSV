@@ -41,6 +41,7 @@ RESOLUTIONS = {
 
 MAX_LABELS = 8
 MAX_ATTACHMENTS = 5
+MAX_COMMENTS = 20
 
 
 # -----------------------------------------------------------------------
@@ -49,6 +50,8 @@ MAX_ATTACHMENTS = 5
 import sys
 import json
 import optparse
+import dateutil.parser
+from pytz import timezone
 
 # Add an item to the csv row
 # Will re-encode to utf8 and wrap quotes around text that contains quotes
@@ -74,7 +77,7 @@ def AddCheckListAsSubTasks(checkListIDs, parentID):
 			if checkListName != 'Checklist':
 				summary = checkListName + " - " + summary
 
-			AddIssue("Sub-Task", "", parentID, status, resolution, summary, "", "", "", None)
+			AddIssue("Sub-Task", "", parentID, status, resolution, summary, "", "", "", None, None)
 
 # End the csv row with a simple newline
 def EndCSVLine():
@@ -82,7 +85,7 @@ def EndCSVLine():
 	csvData += "\n"
 
 # Take all the information for an issue and convert it into a csv line
-def AddIssue(issuetype, IssueID, ParentID, Status, resolution, summary, description, attachments, component, labels):
+def AddIssue(issuetype, IssueID, ParentID, Status, resolution, summary, description, attachments, component, labels, comments):
 	AddCSVItem(issuetype)
 	AddCSVItem(IssueID)
 	AddCSVItem(ParentID)
@@ -103,7 +106,7 @@ def AddIssue(issuetype, IssueID, ParentID, Status, resolution, summary, descript
 	for attachment in attachments:
 		AddCSVItem(attachment["url"])
 
-	for _ in range(numAttachments, MAX_ATTACHMENTS):
+	for _ in xrange(numAttachments, MAX_ATTACHMENTS):
 		AddCSVItem("")
 
 
@@ -120,8 +123,24 @@ def AddIssue(issuetype, IssueID, ParentID, Status, resolution, summary, descript
 		label = label.replace(" ", "_")
 		AddCSVItem(label)
 
-	for _ in range(numLabels, MAX_LABELS):
+	for _ in xrange(numLabels, MAX_LABELS):
 		AddCSVItem("")
+
+
+	# handle comments
+	comments = comments or []
+	numComments = len(comments)
+
+	if numComments > MAX_COMMENTS:
+		print("\tError! - {0} comments found in \"{1}\". Card will be skipped, only {1} will be handled. Update MAX_COMMENTS value".format(numComments, summary, MAX_COMMENTS))
+		return 1
+
+	for comment in comments:
+		AddCSVItem(comment)
+
+	for _ in xrange(numComments, MAX_COMMENTS):
+		AddCSVItem("")
+
 
 	EndCSVLine()
 
@@ -143,8 +162,9 @@ csvPath 		= jsonPath.replace(".json", ".csv")
 listDict 		= {}
 checklistDict 	= {}
 checklistNames 	= {}
+commentsForCard = {}
 csvData 		= ""
-headerLine 		= "issuetype, Issue ID, Parent ID, Status, Resolution, summary, description, component" + (", attachment" * MAX_ATTACHMENTS) + (", label" * MAX_LABELS) + "\n"
+headerLine 		= "issuetype, Issue ID, Parent ID, Status, Resolution, summary, description, component" + (", attachment" * MAX_ATTACHMENTS) + (", label" * MAX_LABELS) + (", comment" * MAX_COMMENTS) + "\n"
 
 print "Loading " + jsonPath
 
@@ -168,6 +188,26 @@ print "\t{0} cards found".format(len(data["cards"]))
 print "\t{0} checklists found".format(len(data["checklists"]))
 print "\t{0} labels found".format(len(data["labels"]))
 
+# extract comments
+for action in data["actions"]:
+	if action["type"] == "commentCard":
+		card_id = action["data"]["card"]["id"]
+		text = action["data"]["text"]
+		author = action["memberCreator"]["username"]
+
+		comments_list = commentsForCard.get(card_id)
+
+		if not comments_list:
+			comments_list = []
+			commentsForCard[card_id] = comments_list
+
+		date = dateutil.parser.parse(action["date"])
+		date = date.astimezone(timezone('US/Pacific'))
+		date = "{0:02d}/{1:02d}/{2:02d} {3:02d}:{4:02d}:{5:02d}".format(date.month, date.day, date.year, date.hour, date.minute, date.second)
+
+		text = u"{0}; {1}; {2}".format(date, author, text)
+		comments_list.append(text)
+
 # Core loop
 for card in data["cards"]:
 	listName 	= listDict[card["idList"]]
@@ -179,6 +219,9 @@ for card in data["cards"]:
 	cardDesc 	= card["desc"].strip()
 	labels 		= card["labels"]
 	attachments = card["attachments"]
+
+	# enriched data
+	comments	= commentsForCard.get(card["id"])
 	status 		= STATUSES.get(listName) or "To Do"
 	resolution  = RESOLUTIONS.get(listName) or ""
 
@@ -191,8 +234,7 @@ for card in data["cards"]:
 	else:
 		cardDesc = "Generated from: " + shortURL
 
-	AddIssue("task", issueID, "", status, resolution, cardName, cardDesc, attachments, component, labels)
-
+	AddIssue("task", issueID, "", status, resolution, cardName, cardDesc, attachments, component, labels, comments)
 	AddCheckListAsSubTasks(card["idChecklists"], issueID)
 
 # Write out csv file
