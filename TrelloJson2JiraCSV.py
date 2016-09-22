@@ -71,12 +71,13 @@ def AddCheckListAsSubTasks(checkListIDs, parentID):
 
 			status = "Done" if item["state"] == "complete" else "To Do"
 			resolution = "Done" if status == "Done" else ""
+			created = parse_timestamp(item["id"])
 			summary = item["name"]
 
 			if checkListName != 'Checklist':
 				summary = checkListName + " - " + summary
 
-			AddIssue("Sub-Task", "", parentID, "", "", status, resolution, summary, "", "", "", None, None)
+			AddIssue("Sub-Task", "", parentID, created, "", status, resolution, summary, "", "", "", None, None)
 
 # End the csv row with a simple newline
 def EndCSVLine():
