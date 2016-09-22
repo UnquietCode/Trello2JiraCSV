@@ -34,10 +34,8 @@ STATUSES = {
 	'Shipit!' : 'Done',
 }
 
-# maps list names to resolutions
-RESOLUTIONS = {
-	'Shipit!' : 'Done',
-}
+STATUS_WHEN_CLOSED = 'Done'
+RESOLUTION_WHEN_CLOSED = 'Done'
 
 MAX_LABELS = 8
 MAX_ATTACHMENTS = 5
@@ -51,6 +49,7 @@ import sys
 import json
 import optparse
 import dateutil.parser
+from datetime import datetime
 from pytz import timezone
 
 # Add an item to the csv row
@@ -77,18 +76,42 @@ def AddCheckListAsSubTasks(checkListIDs, parentID):
 			if checkListName != 'Checklist':
 				summary = checkListName + " - " + summary
 
-			AddIssue("Sub-Task", "", parentID, status, resolution, summary, "", "", "", None, None)
+			AddIssue("Sub-Task", "", parentID, "", "", status, resolution, summary, "", "", "", None, None)
 
 # End the csv row with a simple newline
 def EndCSVLine():
 	global csvData
 	csvData += "\n"
 
+def format_date(date):
+	date = date.astimezone(timezone('US/Pacific'))
+
+	date = "{0:02d}/{1:02d}/{2} {3:02d}:{4:02d}:{5:02d}".format(
+		date.day, date.month, date.year,
+		date.hour, date.minute, date.second
+	)
+
+	return date
+
+def parse_date(datestring):
+	date = dateutil.parser.parse(datestring)
+	return format_date(date)
+
+def parse_timestamp(string):
+	timestamp = int(string[0:8], 16)
+	timestamp = datetime.fromtimestamp(timestamp)
+	timestamp = timezone('UTC').localize(timestamp)
+
+	return format_date(timestamp)
+
+
 # Take all the information for an issue and convert it into a csv line
-def AddIssue(issuetype, IssueID, ParentID, Status, resolution, summary, description, attachments, component, labels, comments):
+def AddIssue(issuetype, IssueID, ParentID, Created, Updated, Status, resolution, summary, description, attachments, component, labels, comments):
 	AddCSVItem(issuetype)
 	AddCSVItem(IssueID)
 	AddCSVItem(ParentID)
+	AddCSVItem(Created)
+	AddCSVItem(Updated)
 	AddCSVItem(Status)
 	AddCSVItem(resolution)
 	AddCSVItem(summary)
@@ -146,11 +169,9 @@ def AddIssue(issuetype, IssueID, ParentID, Status, resolution, summary, descript
 
 # Set up the parser for options
 parser = optparse.OptionParser(version='TrelloJson2JiraCSV v1.0.0')
-
 parser.add_option('-j', '--json'        , dest="jsonPath"   	, action="store"         , help="The path to the trello json file")
-parser.add_option('--list_as_component' , dest="listAsComp"    	, action="store_true"    , help="Use the list as a component in Jira rather than setting it as a status", default=False)
 
-(opts, args) = parser.parse_args()
+opts, args = parser.parse_args()
 
 if not opts.jsonPath:
 	parser.print_help()
@@ -164,7 +185,7 @@ checklistDict 	= {}
 checklistNames 	= {}
 commentsForCard = {}
 csvData 		= ""
-headerLine 		= "issuetype, Issue ID, Parent ID, Status, Resolution, summary, description, component" + (", attachment" * MAX_ATTACHMENTS) + (", label" * MAX_LABELS) + (", comment" * MAX_COMMENTS) + "\n"
+headerLine 		= "issuetype, Issue ID, Parent ID, Created, Modified, Status, Resolution, summary, description, component" + (", attachment" * MAX_ATTACHMENTS) + (", label" * MAX_LABELS) + (", comment" * MAX_COMMENTS) + "\n"
 
 print "Loading " + jsonPath
 
@@ -182,63 +203,74 @@ for checkList in data["checklists"]:
 	checklistNames[checkList["id"]] = checkList["name"]
 
 # Dump some useful information about the board
-print "Trello Board: {0} ({1})".format(data["name"], data["url"])
-print "\t{0} lists found".format(len(data["lists"]))
-print "\t{0} cards found".format(len(data["cards"]))
-print "\t{0} checklists found".format(len(data["checklists"]))
-print "\t{0} labels found".format(len(data["labels"]))
+print("Trello Board: {0} ({1})".format(data["name"], data["url"]))
+print("\t{0} lists found".format(len(data["lists"])))
+print("\t{0} cards found".format(len(data["cards"])))
+print("\t{0} checklists found".format(len(data["checklists"])))
+print("\t{0} labels found".format(len(data["labels"])))
 
-# extract comments
+
+# extract comments where possible
 for action in data["actions"]:
-	if action["type"] == "commentCard":
+	action_type = action["type"]
+
+	if action_type == "commentCard":
 		card_id = action["data"]["card"]["id"]
 		text = action["data"]["text"]
 		author = action["memberCreator"]["username"]
+		date = parse_date(action["date"])
 
+		text = u"{0}; {1}; {2}".format(date, author, text)
 		comments_list = commentsForCard.get(card_id)
 
 		if not comments_list:
 			comments_list = []
 			commentsForCard[card_id] = comments_list
 
-		date = dateutil.parser.parse(action["date"])
-		date = date.astimezone(timezone('US/Pacific'))
-		date = "{0:02d}/{1:02d}/{2:02d} {3:02d}:{4:02d}:{5:02d}".format(date.month, date.day, date.year, date.hour, date.minute, date.second)
-
-		text = u"{0}; {1}; {2}".format(date, author, text)
 		comments_list.append(text)
+
 
 # Core loop
 for card in data["cards"]:
+	card_id 	= card["id"]
 	listName 	= listDict[card["idList"]]
 
 	# Grab all the core data we'll need from the card
-	issueID 	= card["id"]
+	issueID 	= card_id
 	cardName 	= card["name"].strip()
 	shortURL 	= card["shortUrl"].strip()
 	cardDesc 	= card["desc"].strip()
 	labels 		= card["labels"]
 	attachments = card["attachments"]
+	created		= parse_timestamp(card_id)
+	updated		= parse_date(card["dateLastActivity"])
+	comments	= commentsForCard.get(card_id)
 
-	# enriched data
-	comments	= commentsForCard.get(card["id"])
-	status 		= STATUSES.get(listName) or "To Do"
-	resolution  = RESOLUTIONS.get(listName) or ""
+	if card["closed"]:
+		status = STATUS_WHEN_CLOSED
+		resolution = RESOLUTION_WHEN_CLOSED
+	else:
+		status = STATUSES.get(listName)
+		resolution = ""
 
-	# We'll use the list name as the status of component depending on user input
-	component = listName if opts.listAsComp else ""
+	if not status:
+		status = "To Do"
+		component = listName
+	else:
+		component = ""
+
 
 	# Append URL to description
-	if cardDesc:
-		cardDesc += "\n\nGenerated from: " + shortURL
-	else:
-		cardDesc = "Generated from: " + shortURL
+	cardDesc += "\n\n" if cardDesc else ""
+	cardDesc += "Generated from: " + shortURL
 
-	AddIssue("task", issueID, "", status, resolution, cardName, cardDesc, attachments, component, labels, comments)
+	AddIssue("task", issueID, "", created, updated, status, resolution, cardName, cardDesc, attachments, component, labels, comments)
 	AddCheckListAsSubTasks(card["idChecklists"], issueID)
 
 # Write out csv file
 with open(csvPath, "w") as csvFile:
 	csvFile.write(headerLine)
 	csvFile.write(csvData)
-	print "\tData written to {0}".format(csvPath)
+	print("")
+	print("\tData written to {0}".format(csvPath))
+	print("\tSimpleDateFormat is: dd/MM/yyyy HH:mm:ss")
